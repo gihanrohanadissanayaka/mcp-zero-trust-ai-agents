@@ -1,0 +1,18 @@
+{
+  "name": "booking-service",
+  "version": "1.0.0",
+  "description": "Booking Service — create, read, update, delete bookings",
+  "main": "src/index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.18.3",
+    "mongoose": "^8.23.0",
+    "morgan": "^1.10.0"
+  }
+}

@@ -1,0 +1,906 @@
+{
+  "info": {
+    "name": "MCP Hub Backend — Zero Trust API",
+    "description": "Complete test collection for the MCP Hub Backend Zero Trust authorization system.\n\nPhases covered:\n- Phase 1: Agent Identity\n- Phase 2: Session Token Engine\n- Phase 3: Zero Trust Middleware\n- Phase 4: Policy Engine\n\n## Setup\n1. Import this collection\n2. Create an environment named **MCP Hub Local** with these initial variables:\n   - `base_url` = `http://localhost:3001`\n   - All other variables are populated automatically by test scripts.\n\n## Recommended run order\nExecute folders top-to-bottom. Each folder's requests chain into the next via auto-saved environment variables.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "version": "2.1.0"
+  },
+  "variable": [
+    { "key": "base_url",     "value": "http://localhost:3001", "type": "string" },
+    { "key": "dev_api_key",  "value": "", "type": "string" },
+    { "key": "agent_id",     "value": "", "type": "string" },
+    { "key": "agent_secret", "value": "", "type": "string" },
+    { "key": "access_token", "value": "", "type": "string" },
+    { "key": "refresh_token","value": "", "type": "string" },
+    { "key": "session_id",   "value": "", "type": "string" },
+    { "key": "rule_id",      "value": "", "type": "string" }
+  ],
+  "item": [
+
+    {
+      "name": "🏥 Health & Docs",
+      "item": [
+        {
+          "name": "Health Check",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{base_url}}/api/health", "host": ["{{base_url}}"], "path": ["api","health"] }
+          },
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "pm.test('Status 200', () => pm.response.to.have.status(200));",
+              "pm.test('Service healthy', () => {",
+              "  const body = pm.response.json();",
+              "  pm.expect(body.status).to.eql('healthy');",
+              "});"
+            ], "type": "text/javascript" }
+          }]
+        },
+        {
+          "name": "API Docs",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{base_url}}/api", "host": ["{{base_url}}"], "path": ["api"] }
+          },
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "pm.test('Status 200', () => pm.response.to.have.status(200));",
+              "pm.test('Version 2.0.0', () => {",
+              "  const body = pm.response.json();",
+              "  pm.expect(body.version).to.eql('2.0.0');",
+              "});"
+            ], "type": "text/javascript" }
+          }]
+        }
+      ]
+    },
+
+    {
+      "name": "🔐 Developer Setup",
+      "description": "Register a developer account and obtain the API key used to manage agents.",
+      "item": [
+        {
+          "name": "Register Developer",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{base_url}}/api/auth/register", "host": ["{{base_url}}"], "path": ["api","auth","register"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\":    \"Test Developer\",\n  \"email\":   \"dev@test.com\",\n  \"password\": \"TestPass123!\",\n  \"company\": \"Test Corp\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": { "exec": [
+                "pm.test('Status 200 or 201', () => pm.expect(pm.response.code).to.be.oneOf([200, 201]));",
+                "pm.test('Returns apiKey', () => {",
+                "  const body = pm.response.json();",
+                "  pm.expect(body.success).to.be.true;",
+                "  pm.expect(body.apiKey).to.be.a('string').and.to.include('mcphub_');",
+                "  pm.collectionVariables.set('dev_api_key', body.apiKey);",
+                "  console.log('✅ Developer API key saved:', body.apiKey.substring(0, 14) + '...');",
+                "});"
+              ], "type": "text/javascript" }
+            }
+          ]
+        },
+        {
+          "name": "Register Developer — Missing Fields (should fail)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{base_url}}/api/auth/register", "host": ["{{base_url}}"], "path": ["api","auth","register"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Incomplete Dev\"\n}"
+            }
+          },
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "pm.test('Rejects missing fields', () => {",
+              "  pm.expect(pm.response.code).to.eql(400);",
+              "  pm.expect(pm.response.json().success).to.be.false;",
+              "});"
+            ], "type": "text/javascript" }
+          }]
+        }
+      ]
+    },
+
+    {
+      "name": "🤖 Agent Identity (Phase 1)",
+      "description": "CRUD operations for AI agent identities. All endpoints require developer API key.",
+      "item": [
+        {
+          "name": "Register Agent",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type",  "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{dev_api_key}}" }
+            ],
+            "url": { "raw": "{{base_url}}/api/agents/register", "host": ["{{base_url}}"], "path": ["api","agents","register"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\":        \"Test CI Bot\",\n  \"description\": \"Automated CI agent for use case analysis\",\n  \"agentType\":   \"ci_bot\",\n  \"policy\": {\n    \"allowedTools\":      [\"usecases_search\", \"usecases_get\", \"analysis_impact\"],\n    \"allowedProjects\":   [\"*\"],\n    \"allowedOperations\": [\"read\"],\n    \"maxSessionDurationMinutes\": 60,\n    \"rateLimit\": {\n      \"requestsPerMinute\": 30,\n      \"requestsPerHour\":   300\n    }\n  }\n}"
+            }
+          },
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "pm.test('Status 201', () => pm.response.to.have.status(201));",
+              "pm.test('Returns agentId and agentSecret', () => {",
+              "  const body = pm.response.json();",
+              "  pm.expect(body.success).to.be.true;",
+              "  pm.expect(body.data.agentId).to.match(/^agt_/);",
+              "  pm.expect(body.data.agentSecret).to.match(/^ags_/);",
+              "  pm.collectionVariables.set('agent_id',     body.data.agentId);",
+              "  pm.collectionVariables.set('agent_secret', body.data.agentSecret);",
+              "  console.log('✅ Agent registered:', body.data.agentId);",
+              "  console.log('⚠️  Store this secret NOW — shown only once:', body.data.agentSecret.substring(0,10) + '...');",
+              "});"
+            ], "type": "text/javascript" }
+          }]
+        },
+        {
+          "name": "Register Agent — Invalid agentType (should fail)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type",  "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{dev_api_key}}" }
+            ],
+            "url": { "raw": "{{base_url}}/api/agents/register", "host": ["{{base_url}}"], "path": ["api","agents","register"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\":      \"Bad Bot\",\n  \"agentType\": \"hacker\"\n}"
+            }
+          },
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "pm.test('Rejects invalid agentType', () => {",
+              "  pm.expect(pm.response.code).to.eql(400);",
+              "  pm.expect(pm.response.json().success).to.be.false;",
+              "});"
+            ], "type": "text/javascript" }
+          }]
+        },
+        {
+          "name": "Register Agent — No Auth (should fail)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{base_url}}/api/agents/register", "host": ["{{base_url}}"], "path": ["api","agents","register"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Unauth Bot\"\n}"
+            }
+          },
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "pm.test('Rejects missing auth', () => {",
+              "  pm.expect(pm.response.code).to.eql(401);",
+              "});"
+            ], "type": "text/javascript" }
+          }]
+        },
+        {
+          "name": "List Agents",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{dev_api_key}}" }],
+            "url": { "raw": "{{base_url}}/api/agents", "host": ["{{base_url}}"], "path": ["api","agents"] }
+          },
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "pm.test('Status 200', () => pm.response.to.have.status(200));",
+              "pm.test('Returns agents array', () => {",
+              "  const body = pm.response.json();",
+              "  pm.expect(body.success).to.be.true;",
+              "  pm.expect(body.data.agents).to.be.an('array');",
+              "  pm.expect(body.data.total).to.be.a('number');",
+              "  console.log('Agents found:', body.data.total);",
+              "});"
+            ], "type": "text/javascript" }
+          }]
+        },
+        {
+          "name": "Get Agent By ID",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{dev_api_key}}" }],
+            "url": { "raw": "{{base_url}}/api/agents/{{agent_id}}", "host": ["{{base_url}}"], "path": ["api","agents","{{agent_id}}"] }
+          },
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "pm.test('Status 200', () => pm.response.to.have.status(200));",
+              "pm.test('Correct agent returned', () => {",
+              "  const body = pm.response.json();",
+              "  pm.expect(body.success).to.be.true;",
+              "  pm.expect(body.data.agentId).to.eql(pm.collectionVariables.get('agent_id'));",
+              "  pm.expect(body.data).to.have.property('activeSessions');",
+              "});"
+            ], "type": "text/javascript" }
+          }]
+        },
+        {
+          "name": "Update Agent Policy",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type",  "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{dev_api_key}}" }
+            ],
+            "url": { "raw": "{{base_url}}/api/agents/{{agent_id}}/policy", "host": ["{{base_url}}"], "path": ["api","agents","{{agent_id}}","policy"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"policy\": {\n    \"allowedTools\":      [\"usecases_search\", \"usecases_get\", \"analysis_impact\", \"scaffold_create\"],\n    \"allowedProjects\":   [\"*\"],\n    \"allowedOperations\": [\"read\", \"write\"],\n    \"maxSessionDurationMinutes\": 30\n  }\n}"
+            }
+          },
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "pm.test('Status 200', () => pm.response.to.have.status(200));",
+              "pm.test('Policy updated', () => {",
+              "  const body = pm.response.json();",
+              "  pm.expect(body.success).to.be.true;",
+              "  pm.expect(body.data.agentId).to.eql(pm.collectionVariables.get('agent_id'));",
+              "});"
+            ], "type": "text/javascript" }
+          }]
+        },
+        {
+          "name": "List Agent Sessions",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{dev_api_key}}" }],
+            "url": { "raw": "{{base_url}}/api/agents/{{agent_id}}/sessions", "host": ["{{base_url}}"], "path": ["api","agents","{{agent_id}}","sessions"] }
+          },
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "pm.test('Status 200', () => pm.response.to.have.status(200));",
+              "pm.test('Returns sessions array', () => {",
+              "  const body = pm.response.json();",
+              "  pm.expect(body.success).to.be.true;",
+              "  pm.expect(body.data.sessions).to.be.an('array');",
+              "});"
+            ], "type": "text/javascript" }
+          }]
+        }
+      ]
+    },
+
+    {
+      "name": "🎫 Session Tokens (Phase 2)",
+      "description": "JWT token lifecycle — authenticate, refresh, revoke, introspect.",
+      "item": [
+        {
+          "name": "Authenticate Agent",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{base_url}}/api/agents/authenticate", "host": ["{{base_url}}"], "path": ["api","agents","authenticate"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"agentId\":     \"{{agent_id}}\",\n  \"agentSecret\": \"{{agent_secret}}\",\n  \"context\":     \"postman-test-run\"\n}"
+            }
+          },
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "pm.test('Status 200', () => pm.response.to.have.status(200));",
+              "pm.test('Returns valid tokens', () => {",
+              "  const body = pm.response.json();",
+              "  pm.expect(body.success).to.be.true;",
+              "  pm.expect(body.accessToken).to.be.a('string').and.to.include('eyJ');",
+              "  pm.expect(body.refreshToken).to.be.a('string');",
+              "  pm.expect(body.sessionId).to.be.a('string');",
+              "  pm.expect(body.tokenType).to.eql('Bearer');",
+              "  pm.expect(body.expiresIn).to.be.a('number').and.to.be.above(0);",
+              "  pm.collectionVariables.set('access_token',  body.accessToken);",
+              "  pm.collectionVariables.set('refresh_token', body.refreshToken);",
+              "  pm.collectionVariables.set('session_id',    body.sessionId);",
+              "  console.log('✅ Tokens saved. Session:', body.sessionId);",
+              "  console.log('   Expires in:', body.expiresIn, 'seconds');",
+              "});"
+            ], "type": "text/javascript" }
+          }]
+        },
+        {
+          "name": "Authenticate Agent — Wrong Secret (should fail)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{base_url}}/api/agents/authenticate", "host": ["{{base_url}}"], "path": ["api","agents","authenticate"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"agentId\":     \"{{agent_id}}\",\n  \"agentSecret\": \"ags_wrong_secret_000000000000000000000000000000000000000000000000000000\"\n}"
+            }
+          },
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "pm.test('Rejects wrong secret', () => {",
+              "  pm.expect(pm.response.code).to.eql(401);",
+              "  pm.expect(pm.response.json().success).to.be.false;",
+              "});"
+            ], "type": "text/javascript" }
+          }]
+        },
+        {
+          "name": "Introspect Token",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type",  "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{dev_api_key}}" }
+            ],
+            "url": { "raw": "{{base_url}}/api/agents/introspect", "host": ["{{base_url}}"], "path": ["api","agents","introspect"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"token\": \"{{access_token}}\"\n}"
+            }
+          },
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "pm.test('Status 200', () => pm.response.to.have.status(200));",
+              "pm.test('Token is active and valid', () => {",
+              "  const body = pm.response.json();",
+              "  pm.expect(body.success).to.be.true;",
+              "  pm.expect(body.data.valid).to.be.true;",
+              "  pm.expect(body.data.active).to.be.true;",
+              "  pm.expect(body.data.expired).to.be.false;",
+              "  pm.expect(body.data.revoked).to.be.false;",
+              "  pm.expect(body.data.claims.sub).to.eql(pm.collectionVariables.get('agent_id'));",
+              "});"
+            ], "type": "text/javascript" }
+          }]
+        },
+        {
+          "name": "Refresh Token",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{base_url}}/api/agents/refresh", "host": ["{{base_url}}"], "path": ["api","agents","refresh"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refreshToken\": \"{{refresh_token}}\"\n}"
+            }
+          },
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "pm.test('Status 200', () => pm.response.to.have.status(200));",
+              "pm.test('Returns new rotated tokens', () => {",
+              "  const body = pm.response.json();",
+              "  pm.expect(body.success).to.be.true;",
+              "  pm.expect(body.accessToken).to.not.eql(pm.collectionVariables.get('access_token'));",
+              "  pm.expect(body.refreshToken).to.not.eql(pm.collectionVariables.get('refresh_token'));",
+              "  pm.collectionVariables.set('access_token',  body.accessToken);",
+              "  pm.collectionVariables.set('refresh_token', body.refreshToken);",
+              "  pm.collectionVariables.set('session_id',    body.sessionId);",
+              "  console.log('✅ Tokens rotated. New session:', body.sessionId);",
+              "});"
+            ], "type": "text/javascript" }
+          }]
+        },
+        {
+          "name": "Refresh Token — Old Token (should fail)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{base_url}}/api/agents/refresh", "host": ["{{base_url}}"], "path": ["api","agents","refresh"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refreshToken\": \"reft_already_used_and_rotated_000000000000000000000000000000\"\n}"
+            }
+          },
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "pm.test('Rejects expired/invalid refresh token', () => {",
+              "  pm.expect(pm.response.code).to.be.oneOf([400, 401]);",
+              "  pm.expect(pm.response.json().success).to.be.false;",
+              "});"
+            ], "type": "text/javascript" }
+          }]
+        }
+      ]
+    },
+
+    {
+      "name": "🛡️ Policy Engine (Phase 4)",
+      "description": "Fine-grained policy rule management for individual agents.",
+      "item": [
+        {
+          "name": "Get Policy Document",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{dev_api_key}}" }],
+            "url": { "raw": "{{base_url}}/api/agents/{{agent_id}}/policy", "host": ["{{base_url}}"], "path": ["api","agents","{{agent_id}}","policy"] }
+          },
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "pm.test('Status 200', () => pm.response.to.have.status(200));",
+              "pm.test('Returns policy rules', () => {",
+              "  const body = pm.response.json();",
+              "  pm.expect(body.success).to.be.true;",
+              "  pm.expect(body.data.policies).to.be.an('array').and.to.have.length.above(0);",
+              "  // Last rule should always be the catch-all deny",
+              "  const lastRule = body.data.policies[body.data.policies.length - 1];",
+              "  pm.expect(lastRule.resource).to.eql('tool:*');",
+              "  pm.expect(lastRule.effect).to.eql('deny');",
+              "  console.log('Rules count:', body.data.ruleCount);",
+              "  console.log('Rules:', JSON.stringify(body.data.policies.map(r => r.resource + ' → ' + r.effect)));",
+              "});"
+            ], "type": "text/javascript" }
+          }]
+        },
+        {
+          "name": "Simulate Policy — Expected ALLOW",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type",  "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{dev_api_key}}" }
+            ],
+            "url": { "raw": "{{base_url}}/api/agents/{{agent_id}}/policy/simulate", "host": ["{{base_url}}"], "path": ["api","agents","{{agent_id}}","policy","simulate"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"toolName\":  \"usecases_search\",\n  \"operation\": \"read\",\n  \"projectId\": null\n}"
+            }
+          },
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "pm.test('Status 200', () => pm.response.to.have.status(200));",
+              "pm.test('usecases_search is ALLOWED', () => {",
+              "  const body = pm.response.json();",
+              "  pm.expect(body.success).to.be.true;",
+              "  pm.expect(body.data.simulation).to.be.true;",
+              "  pm.expect(body.data.decision).to.eql('allow');",
+              "  pm.expect(body.data.matchedRule).to.not.be.null;",
+              "  console.log('Decision:', body.data.decision, '| Matched rule:', body.data.matchedRule?.id ?? 'none');",
+              "});"
+            ], "type": "text/javascript" }
+          }]
+        },
+        {
+          "name": "Simulate Policy — Expected DENY (unlisted tool)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type",  "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{dev_api_key}}" }
+            ],
+            "url": { "raw": "{{base_url}}/api/agents/{{agent_id}}/policy/simulate", "host": ["{{base_url}}"], "path": ["api","agents","{{agent_id}}","policy","simulate"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"toolName\":  \"project_bootstrap\",\n  \"operation\": \"write\",\n  \"projectId\": null\n}"
+            }
+          },
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "pm.test('Status 200', () => pm.response.to.have.status(200));",
+              "pm.test('project_bootstrap is DENIED by default', () => {",
+              "  const body = pm.response.json();",
+              "  pm.expect(body.data.decision).to.eql('deny');",
+              "  console.log('Correctly denied. Reason:', body.data.reason);",
+              "});"
+            ], "type": "text/javascript" }
+          }]
+        },
+        {
+          "name": "Add Policy Rule — Allow scaffold_create",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type",  "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{dev_api_key}}" }
+            ],
+            "url": { "raw": "{{base_url}}/api/agents/{{agent_id}}/policy/rules", "host": ["{{base_url}}"], "path": ["api","agents","{{agent_id}}","policy","rules"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"resource\":    \"tool:scaffold_create\",\n  \"effect\":      \"allow\",\n  \"conditions\":  {\n    \"projectIds\": [\"*\"],\n    \"operations\": [\"write\"]\n  },\n  \"description\": \"Allow scaffold generation on any project\"\n}"
+            }
+          },
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "pm.test('Status 201', () => pm.response.to.have.status(201));",
+              "pm.test('Rule created with ID', () => {",
+              "  const body = pm.response.json();",
+              "  pm.expect(body.success).to.be.true;",
+              "  pm.expect(body.data.rule.id).to.match(/^rule_/);",
+              "  pm.expect(body.data.rule.resource).to.eql('tool:scaffold_create');",
+              "  pm.collectionVariables.set('rule_id', body.data.rule.id);",
+              "  console.log('✅ Rule added:', body.data.rule.id);",
+              "});"
+            ], "type": "text/javascript" }
+          }]
+        },
+        {
+          "name": "Add Policy Rule — With Time Window",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type",  "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{dev_api_key}}" }
+            ],
+            "url": { "raw": "{{base_url}}/api/agents/{{agent_id}}/policy/rules", "host": ["{{base_url}}"], "path": ["api","agents","{{agent_id}}","policy","rules"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"resource\":   \"tool:usecases_upsert\",\n  \"effect\":     \"allow\",\n  \"conditions\": {\n    \"projectIds\": [\"*\"],\n    \"operations\": [\"write\"],\n    \"timeWindow\": {\n      \"startHour\":  8,\n      \"endHour\":   18,\n      \"daysOfWeek\": [1, 2, 3, 4, 5]\n    }\n  },\n  \"description\": \"Allow upsert on weekdays 08:00-18:00 UTC only\"\n}"
+            }
+          },
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "pm.test('Status 201', () => pm.response.to.have.status(201));",
+              "pm.test('Time-windowed rule created', () => {",
+              "  const body = pm.response.json();",
+              "  pm.expect(body.success).to.be.true;",
+              "  pm.expect(body.data.rule.conditions.timeWindow).to.deep.include({ startHour: 8, endHour: 18 });",
+              "});"
+            ], "type": "text/javascript" }
+          }]
+        },
+        {
+          "name": "Add Policy Rule — Invalid Effect (should fail)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type",  "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{dev_api_key}}" }
+            ],
+            "url": { "raw": "{{base_url}}/api/agents/{{agent_id}}/policy/rules", "host": ["{{base_url}}"], "path": ["api","agents","{{agent_id}}","policy","rules"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"resource\": \"tool:*\",\n  \"effect\":   \"permit\"\n}"
+            }
+          },
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "pm.test('Rejects invalid effect', () => {",
+              "  pm.expect(pm.response.code).to.eql(400);",
+              "  pm.expect(pm.response.json().success).to.be.false;",
+              "});"
+            ], "type": "text/javascript" }
+          }]
+        },
+        {
+          "name": "Get Policy — Verify New Rules Present",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{dev_api_key}}" }],
+            "url": { "raw": "{{base_url}}/api/agents/{{agent_id}}/policy", "host": ["{{base_url}}"], "path": ["api","agents","{{agent_id}}","policy"] }
+          },
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "pm.test('Rule count increased', () => {",
+              "  const body = pm.response.json();",
+              "  pm.expect(body.data.ruleCount).to.be.above(1);",
+              "  const hasNewRule = body.data.policies.some(r => r.resource === 'tool:scaffold_create');",
+              "  pm.expect(hasNewRule).to.be.true;",
+              "});"
+            ], "type": "text/javascript" }
+          }]
+        },
+        {
+          "name": "Simulate Policy — scaffold_create Now ALLOWED",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type",  "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{dev_api_key}}" }
+            ],
+            "url": { "raw": "{{base_url}}/api/agents/{{agent_id}}/policy/simulate", "host": ["{{base_url}}"], "path": ["api","agents","{{agent_id}}","policy","simulate"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"toolName\":  \"scaffold_create\",\n  \"operation\": \"write\"\n}"
+            }
+          },
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "pm.test('scaffold_create is now ALLOWED after adding rule', () => {",
+              "  const body = pm.response.json();",
+              "  pm.expect(body.data.decision).to.eql('allow');",
+              "  console.log('Decision changed to:', body.data.decision, '| Rule:', body.data.matchedRule?.id);",
+              "});"
+            ], "type": "text/javascript" }
+          }]
+        },
+        {
+          "name": "Remove Policy Rule",
+          "request": {
+            "method": "DELETE",
+            "header": [{ "key": "Authorization", "value": "Bearer {{dev_api_key}}" }],
+            "url": { "raw": "{{base_url}}/api/agents/{{agent_id}}/policy/rules/{{rule_id}}", "host": ["{{base_url}}"], "path": ["api","agents","{{agent_id}}","policy","rules","{{rule_id}}"] }
+          },
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "pm.test('Status 200', () => pm.response.to.have.status(200));",
+              "pm.test('Rule removed', () => {",
+              "  const body = pm.response.json();",
+              "  pm.expect(body.success).to.be.true;",
+              "  pm.expect(body.data.removed).to.be.true;",
+              "  pm.expect(body.data.ruleId).to.eql(pm.collectionVariables.get('rule_id'));",
+              "  console.log('✅ Rule removed:', body.data.ruleId);",
+              "});"
+            ], "type": "text/javascript" }
+          }]
+        },
+        {
+          "name": "Remove Catch-All Deny (should fail)",
+          "event": [{
+            "listen": "prerequest",
+            "script": { "exec": [
+              "// First GET the policy to find the catch-all deny rule's ID",
+              "const agentId    = pm.collectionVariables.get('agent_id');",
+              "const devApiKey  = pm.collectionVariables.get('dev_api_key');",
+              "const baseUrl    = pm.collectionVariables.get('base_url');",
+              "",
+              "pm.sendRequest({",
+              "  url:    `${baseUrl}/api/agents/${agentId}/policy`,",
+              "  method: 'GET',",
+              "  header: { Authorization: `Bearer ${devApiKey}` }",
+              "}, (err, res) => {",
+              "  if (!err) {",
+              "    const policies = res.json().data?.policies ?? [];",
+              "    const catchAll = policies.find(r => r.resource === 'tool:*' && r.effect === 'deny');",
+              "    if (catchAll) {",
+              "      pm.collectionVariables.set('catch_all_rule_id', catchAll.id);",
+              "      console.log('Found catch-all rule:', catchAll.id);",
+              "    }",
+              "  }",
+              "});"
+            ], "type": "text/javascript" }
+          }, {
+            "listen": "test",
+            "script": { "exec": [
+              "pm.test('Cannot remove catch-all deny', () => {",
+              "  pm.expect(pm.response.code).to.eql(400);",
+              "  pm.expect(pm.response.json().success).to.be.false;",
+              "  pm.expect(pm.response.json().error).to.include('catch-all');",
+              "});"
+            ], "type": "text/javascript" }
+          }],
+          "request": {
+            "method": "DELETE",
+            "header": [{ "key": "Authorization", "value": "Bearer {{dev_api_key}}" }],
+            "url": { "raw": "{{base_url}}/api/agents/{{agent_id}}/policy/rules/{{catch_all_rule_id}}", "host": ["{{base_url}}"], "path": ["api","agents","{{agent_id}}","policy","rules","{{catch_all_rule_id}}"] }
+          }
+        },
+        {
+          "name": "Replace All Policy Rules",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Content-Type",  "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{dev_api_key}}" }
+            ],
+            "url": { "raw": "{{base_url}}/api/agents/{{agent_id}}/policy/rules", "host": ["{{base_url}}"], "path": ["api","agents","{{agent_id}}","policy","rules"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"rules\": [\n    {\n      \"resource\":    \"tool:usecases_search\",\n      \"effect\":      \"allow\",\n      \"conditions\":  { \"projectIds\": [\"*\"], \"operations\": [\"read\"] },\n      \"description\": \"Allow search everywhere\"\n    },\n    {\n      \"resource\":    \"tool:usecases_get\",\n      \"effect\":      \"allow\",\n      \"conditions\":  { \"projectIds\": [\"*\"], \"operations\": [\"read\"] },\n      \"description\": \"Allow get everywhere\"\n    },\n    {\n      \"resource\":    \"tool:analysis_impact\",\n      \"effect\":      \"allow\",\n      \"conditions\":  { \"projectIds\": [\"*\"], \"operations\": [\"read\"] },\n      \"description\": \"Allow impact analysis\"\n    }\n  ]\n}"
+            }
+          },
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "pm.test('Status 200', () => pm.response.to.have.status(200));",
+              "pm.test('Rules replaced with auto catch-all', () => {",
+              "  const body = pm.response.json();",
+              "  pm.expect(body.success).to.be.true;",
+              "  pm.expect(body.data.ruleCount).to.eql(4); // 3 provided + 1 auto catch-all deny",
+              "  const lastRule = body.data.policies[body.data.policies.length - 1];",
+              "  pm.expect(lastRule.resource).to.eql('tool:*');",
+              "  pm.expect(lastRule.effect).to.eql('deny');",
+              "  console.log('✅ Rules replaced. Total rules:', body.data.ruleCount);",
+              "});"
+            ], "type": "text/javascript" }
+          }]
+        }
+      ]
+    },
+
+    {
+      "name": "🔒 Zero Trust — Token Validation",
+      "description": "Verify the Zero Trust middleware enforces token requirements correctly via the API surface.",
+      "item": [
+        {
+          "name": "Introspect — Verify Token Still Active",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type",  "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{dev_api_key}}" }
+            ],
+            "url": { "raw": "{{base_url}}/api/agents/introspect", "host": ["{{base_url}}"], "path": ["api","agents","introspect"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"token\": \"{{access_token}}\"\n}"
+            }
+          },
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "pm.test('Token is still active', () => {",
+              "  const body = pm.response.json();",
+              "  pm.expect(body.data.active).to.be.true;",
+              "  pm.expect(body.data.revoked).to.be.false;",
+              "  console.log('Token active, expires at:', body.data.claims?.exp",
+              "    ? new Date(body.data.claims.exp * 1000).toISOString() : 'unknown');",
+              "});"
+            ], "type": "text/javascript" }
+          }]
+        },
+        {
+          "name": "Revoke Session (Agent Logout)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{base_url}}/api/agents/revoke-session", "host": ["{{base_url}}"], "path": ["api","agents","revoke-session"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sessionId\": \"{{session_id}}\",\n  \"reason\":    \"postman_test_logout\"\n}"
+            }
+          },
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "pm.test('Status 200', () => pm.response.to.have.status(200));",
+              "pm.test('Session revoked', () => {",
+              "  const body = pm.response.json();",
+              "  pm.expect(body.success).to.be.true;",
+              "  console.log('✅ Session revoked:', pm.collectionVariables.get('session_id'));",
+              "});"
+            ], "type": "text/javascript" }
+          }]
+        },
+        {
+          "name": "Introspect — Token Should Be Revoked Now",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type",  "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{dev_api_key}}" }
+            ],
+            "url": { "raw": "{{base_url}}/api/agents/introspect", "host": ["{{base_url}}"], "path": ["api","agents","introspect"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"token\": \"{{access_token}}\"\n}"
+            }
+          },
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "pm.test('Token is now revoked', () => {",
+              "  const body = pm.response.json();",
+              "  pm.expect(body.data.revoked).to.be.true;",
+              "  pm.expect(body.data.active).to.be.false;",
+              "  console.log('✅ Confirmed: token is revoked');",
+              "});"
+            ], "type": "text/javascript" }
+          }]
+        },
+        {
+          "name": "Re-Authenticate After Revocation",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{base_url}}/api/agents/authenticate", "host": ["{{base_url}}"], "path": ["api","agents","authenticate"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"agentId\":     \"{{agent_id}}\",\n  \"agentSecret\": \"{{agent_secret}}\",\n  \"context\":     \"post-revocation-reauth\"\n}"
+            }
+          },
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "pm.test('Can re-authenticate after session revoke', () => {",
+              "  const body = pm.response.json();",
+              "  pm.expect(body.success).to.be.true;",
+              "  pm.expect(body.accessToken).to.not.eql(pm.collectionVariables.get('access_token'));",
+              "  pm.collectionVariables.set('access_token',  body.accessToken);",
+              "  pm.collectionVariables.set('refresh_token', body.refreshToken);",
+              "  pm.collectionVariables.set('session_id',    body.sessionId);",
+              "  console.log('✅ New session established:', body.sessionId);",
+              "});"
+            ], "type": "text/javascript" }
+          }]
+        }
+      ]
+    },
+
+    {
+      "name": "🧹 Cleanup",
+      "description": "Tear down test resources in the right order.",
+      "item": [
+        {
+          "name": "Revoke All Agent Sessions",
+          "request": {
+            "method": "DELETE",
+            "header": [{ "key": "Authorization", "value": "Bearer {{dev_api_key}}" }],
+            "url": { "raw": "{{base_url}}/api/agents/{{agent_id}}/sessions", "host": ["{{base_url}}"], "path": ["api","agents","{{agent_id}}","sessions"] }
+          },
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "pm.test('Status 200', () => pm.response.to.have.status(200));",
+              "pm.test('Sessions cleared', () => {",
+              "  const body = pm.response.json();",
+              "  pm.expect(body.success).to.be.true;",
+              "  console.log('Sessions revoked:', body.data.sessionsRevoked);",
+              "});"
+            ], "type": "text/javascript" }
+          }]
+        },
+        {
+          "name": "Rotate Agent Secret",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{dev_api_key}}" }],
+            "url": { "raw": "{{base_url}}/api/agents/{{agent_id}}/rotate-secret", "host": ["{{base_url}}"], "path": ["api","agents","{{agent_id}}","rotate-secret"] }
+          },
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "pm.test('Status 200', () => pm.response.to.have.status(200));",
+              "pm.test('New secret issued', () => {",
+              "  const body = pm.response.json();",
+              "  pm.expect(body.success).to.be.true;",
+              "  pm.expect(body.data.agentSecret).to.match(/^ags_/);",
+              "  pm.expect(body.data.agentSecret).to.not.eql(pm.collectionVariables.get('agent_secret'));",
+              "  pm.collectionVariables.set('agent_secret', body.data.agentSecret);",
+              "  console.log('✅ Secret rotated. Old sessions revoked.');",
+              "});"
+            ], "type": "text/javascript" }
+          }]
+        },
+        {
+          "name": "Deactivate Agent",
+          "request": {
+            "method": "DELETE",
+            "header": [{ "key": "Authorization", "value": "Bearer {{dev_api_key}}" }],
+            "url": { "raw": "{{base_url}}/api/agents/{{agent_id}}", "host": ["{{base_url}}"], "path": ["api","agents","{{agent_id}}"] }
+          },
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "pm.test('Status 200', () => pm.response.to.have.status(200));",
+              "pm.test('Agent deactivated', () => {",
+              "  const body = pm.response.json();",
+              "  pm.expect(body.success).to.be.true;",
+              "  console.log('✅ Agent deactivated:', pm.collectionVariables.get('agent_id'));",
+              "  pm.collectionVariables.set('agent_id', '');",
+              "  pm.collectionVariables.set('agent_secret', '');",
+              "  pm.collectionVariables.set('access_token', '');",
+              "  pm.collectionVariables.set('refresh_token', '');",
+              "  pm.collectionVariables.set('session_id', '');",
+              "});"
+            ], "type": "text/javascript" }
+          }]
+        }
+      ]
+    }
+
+  ]
+}

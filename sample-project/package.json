@@ -1,0 +1,20 @@
+{
+  "name": "mcp-hub-sample-project",
+  "version": "1.0.0",
+  "description": "Sample microservices project with MCP Hub access control",
+  "private": true,
+  "workspaces": [
+    "api-gateway",
+    "auth-service",
+    "booking-service",
+    "client"
+  ],
+  "scripts": {
+    "start": "concurrently --names \"auth,booking,gateway,client\" --prefix-colors \"green,yellow,cyan,magenta\" \"npm run start -w auth-service\" \"npm run start -w booking-service\" \"npm run start -w api-gateway\" \"npm run dev -w client\"",
+    "dev": "concurrently --names \"auth,booking,gateway,client\" --prefix-colors \"green,yellow,cyan,magenta\" \"npm run dev -w auth-service\" \"npm run dev -w booking-service\" \"npm run dev -w api-gateway\" \"npm run dev -w client\"",
+    "install:all": "npm install --workspaces"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}

@@ -1,0 +1,46 @@
+{
+  "name": "mcp-hub",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "server.js",
+  "bin": {
+    "mcp-hub": "./server.js"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "setup:developer": "node scripts/setup-developer.js",
+    "keys:list": "node scripts/list-keys.js",
+    "keys:refresh": "node scripts/refresh-key.js",
+    "keys:deactivate": "node scripts/deactivate-key.js",
+    "agents:register": "node scripts/register-agent.js",
+    "agents:list": "node scripts/list-agents.js",
+    "agents:revoke": "node scripts/revoke-agent.js",
+    "docker:build": "./build-container.sh",
+    "docker:run": "./run-container.sh",
+    "docker:test": "./test-container.sh",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "mcp",
+    "mcphub",
+    "enterprise-ai",
+    "mongodb"
+  ],
+  "author": "",
+  "license": "ISC",
+  "description": "MCP server for MCP Hub Enterprise AI with MongoDB integration",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.18.2",
+    "bcrypt": "^5.1.1",
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.3",
+    "express": "^4.21.2",
+    "express-rate-limit": "^7.1.5",
+    "groq-sdk": "^0.8.0",
+    "helmet": "^7.1.0",
+    "jsonwebtoken": "^9.0.2",
+    "mongodb": "^6.20.0",
+    "zod": "^3.25.76"
+  }
+}
