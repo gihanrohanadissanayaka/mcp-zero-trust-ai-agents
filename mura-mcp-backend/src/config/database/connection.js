@@ -15,9 +15,8 @@ const DB_CONFIG = {
   dbName: process.env.DB_NAME || "mcphub",
   options: {
     maxPoolSize: 10,
-    serverSelectionTimeoutMS: 5000,
-    socketTimeoutMS: 45000,
-    family: 4
+    serverSelectionTimeoutMS: 10000,
+    socketTimeoutMS: 45000
   }
 };
 
