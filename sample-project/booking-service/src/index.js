@@ -14,10 +14,19 @@ import mongoose  from 'mongoose'
 import { router } from './routes/bookings.js'
 
 const app   = express()
-const PORT  = process.env.BOOKING_SERVICE_PORT || 4002
+const PORT  = process.env.BOOKING_SERVICE_PORT || process.env.PORT || 4002
 const MONGO = process.env.MONGO_URI || 'mongodb://localhost:27017/sample_project'
 
-app.use(cors())
+const allowedOrigins = process.env.CORS_ORIGIN
+  ? process.env.CORS_ORIGIN.split(',')
+  : ['http://localhost:4000']
+app.use(cors({
+  origin: (origin, cb) => {
+    if (!origin || allowedOrigins.includes(origin)) return cb(null, true)
+    cb(new Error('CORS: origin not allowed'))
+  },
+  credentials: true,
+}))
 app.use(express.json())
 app.use(morgan('[:date[iso]] BOOK :method :url :status'))
 

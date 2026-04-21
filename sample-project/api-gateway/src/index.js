@@ -13,10 +13,19 @@ import morgan  from 'morgan'
 import { router } from './routes/index.js'
 
 const app  = express()
-const PORT = process.env.GATEWAY_PORT || 4000
+const PORT = process.env.GATEWAY_PORT || process.env.PORT || 4000
 
 // ── Middleware ───────────────────────────────────────────────
-app.use(cors())
+const allowedOrigins = process.env.CORS_ORIGIN
+  ? process.env.CORS_ORIGIN.split(',')
+  : ['http://localhost:5174']
+app.use(cors({
+  origin: (origin, cb) => {
+    if (!origin || allowedOrigins.includes(origin)) return cb(null, true)
+    cb(new Error('CORS: origin not allowed'))
+  },
+  credentials: true,
+}))
 app.use(express.json())
 app.use(morgan('[:date[iso]] :method :url :status :response-time ms'))
 
