@@ -85,7 +85,7 @@ function generateRefreshToken() {
  *   agent: { agentId, name, allowedTools, allowedProjects, allowedOperations }
  * }}
  */
-export async function issueSessionToken(agentId, rawSecret, context = 'mcp-client') {
+export async function issueSessionToken(agentId, rawSecret, context = 'mcp-client', requestedDurationMinutes = null) {
   // 1. Validate agent credentials
   const authResult = await validateAgentCredentials(agentId, rawSecret);
   if (!authResult.valid) {
@@ -97,8 +97,15 @@ export async function issueSessionToken(agentId, rawSecret, context = 'mcp-clien
   const now        = new Date();
 
   // 2. Determine token lifetimes (respect agent-level session duration)
-  const agentMaxSecs      = (agent.policy?.maxSessionDurationMinutes || 60) * 60;
-  const accessLifetimeSecs = Math.min(CONFIG.accessTokenLifetime, agentMaxSecs);
+  //    requestedDurationMinutes is capped by the agent policy max (or 10080 = 1 week)
+  const policyMaxMins  = agent.policy?.maxSessionDurationMinutes || 60;
+  const requestedSecs  = requestedDurationMinutes ? requestedDurationMinutes * 60 : null;
+  const policyMaxSecs  = policyMaxMins * 60;
+  const configMaxSecs  = CONFIG.accessTokenLifetime;            // e.g. 3600
+  const WEEK_SECS      = 7 * 24 * 60 * 60;                     // hard cap: 1 week
+  const accessLifetimeSecs = requestedSecs
+    ? Math.min(requestedSecs, policyMaxSecs, WEEK_SECS)
+    : Math.min(configMaxSecs, policyMaxSecs);
 
   const accessExpiresAt  = new Date(now.getTime() + accessLifetimeSecs * 1000);
   const refreshExpiresAt = new Date(now.getTime() + CONFIG.refreshTokenLifetime * 1000);
@@ -124,6 +131,7 @@ export async function issueSessionToken(agentId, rawSecret, context = 'mcp-clien
     allowedTools:      agent.policy?.allowedTools      || [],
     allowedProjects:   agent.policy?.allowedProjects   || [],
     allowedOperations: agent.policy?.allowedOperations || ['read'],
+    allowedServices:   agent.policy?.allowedServices   || [],
     sessionContext:    context
   };
 
@@ -145,6 +153,7 @@ export async function issueSessionToken(agentId, rawSecret, context = 'mcp-clien
     allowedTools:      agent.policy?.allowedTools      || [],
     allowedProjects:   agent.policy?.allowedProjects   || [],
     allowedOperations: agent.policy?.allowedOperations || ['read'],
+    allowedServices:   agent.policy?.allowedServices   || [],
     sessionContext:    context,
 
     // Lifecycle
@@ -179,7 +188,8 @@ export async function issueSessionToken(agentId, rawSecret, context = 'mcp-clien
       name:              agent.name,
       allowedTools:      agent.policy?.allowedTools      || [],
       allowedProjects:   agent.policy?.allowedProjects   || [],
-      allowedOperations: agent.policy?.allowedOperations || ['read']
+      allowedOperations: agent.policy?.allowedOperations || ['read'],
+      allowedServices:   agent.policy?.allowedServices   || []
     }
   };
 }
@@ -264,6 +274,7 @@ export async function verifyAccessToken(token) {
       allowedTools:      decoded.allowedTools      || [],
       allowedProjects:   decoded.allowedProjects   || [],
       allowedOperations: decoded.allowedOperations || ['read'],
+      allowedServices:   decoded.allowedServices   || [],
       sessionContext:    decoded.sessionContext
     }
   };
@@ -359,6 +370,7 @@ export async function refreshSession(refreshToken) {
     allowedTools:      agent.policy?.allowedTools      || [],
     allowedProjects:   agent.policy?.allowedProjects   || [],
     allowedOperations: agent.policy?.allowedOperations || ['read'],
+    allowedServices:   agent.policy?.allowedServices   || [],
     sessionContext:    matchedSession.sessionContext
   };
 
@@ -375,6 +387,7 @@ export async function refreshSession(refreshToken) {
     allowedTools:    agent.policy?.allowedTools      || [],
     allowedProjects: agent.policy?.allowedProjects   || [],
     allowedOperations: agent.policy?.allowedOperations || ['read'],
+    allowedServices: agent.policy?.allowedServices   || [],
     sessionContext:  matchedSession.sessionContext,
     refreshedFrom:   matchedSession.sessionId,
     revoked:         false,
@@ -401,7 +414,8 @@ export async function refreshSession(refreshToken) {
       name:              agent.name,
       allowedTools:      agent.policy?.allowedTools      || [],
       allowedProjects:   agent.policy?.allowedProjects   || [],
-      allowedOperations: agent.policy?.allowedOperations || ['read']
+      allowedOperations: agent.policy?.allowedOperations || ['read'],
+      allowedServices:   agent.policy?.allowedServices   || []
     }
   };
 }
@@ -479,6 +493,7 @@ export async function introspectToken(token) {
       allowedTools:      decoded.allowedTools,
       allowedProjects:   decoded.allowedProjects,
       allowedOperations: decoded.allowedOperations,
+      allowedServices:   decoded.allowedServices   || [],
       issuedAt:   new Date(decoded.iat * 1000),
       expiresAt:  new Date(decoded.exp * 1000),
       revoked:    session?.revoked  ?? false,

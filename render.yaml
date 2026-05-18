@@ -1,0 +1,90 @@
+services:
+  # ── MCP Hub (mura-mcp-backend) ────────────────────────────
+  - type: web
+    name: mura-mcp-backend
+    runtime: node
+    rootDir: mura-mcp-backend
+    buildCommand: npm install
+    startCommand: node server.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3001
+      - key: API_PORT
+        value: 3001
+      - key: MONGO_URL
+        sync: false          # set in Render dashboard
+      - key: DB_NAME
+        value: mcphub
+      - key: JWT_SECRET
+        generateValue: true  # Render auto-generates
+      - key: GROQ_API_KEY
+        sync: false          # set in Render dashboard
+      - key: CORS_ORIGIN
+        sync: false          # set after Vercel deploy, e.g. https://mura-mcp-client.vercel.app
+
+  # ── API Gateway (sample-project) ─────────────────────────
+  - type: web
+    name: sample-api-gateway
+    runtime: node
+    rootDir: sample-project
+    buildCommand: npm install
+    startCommand: node api-gateway/src/index.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 4000
+      - key: GATEWAY_PORT
+        value: 4000
+      - key: AUTH_SERVICE_URL
+        sync: false          # e.g. https://sample-auth-service.onrender.com
+      - key: BOOKING_SERVICE_URL
+        sync: false          # e.g. https://sample-booking-service.onrender.com
+      - key: JWT_SECRET
+        sync: false          # must match auth-service
+      - key: CORS_ORIGIN
+        sync: false          # set after Vercel deploy
+
+  # ── Auth Service ──────────────────────────────────────────
+  - type: web
+    name: sample-auth-service
+    runtime: node
+    rootDir: sample-project
+    buildCommand: npm install
+    startCommand: node auth-service/src/index.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 4001
+      - key: AUTH_SERVICE_PORT
+        value: 4001
+      - key: MONGO_URI
+        sync: false
+      - key: JWT_SECRET
+        sync: false          # must match api-gateway
+
+  # ── Booking Service ───────────────────────────────────────
+  - type: web
+    name: sample-booking-service
+    runtime: node
+    rootDir: sample-project
+    buildCommand: npm install
+    startCommand: node booking-service/src/index.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 4002
+      - key: BOOKING_SERVICE_PORT
+        value: 4002
+      - key: MONGO_URI
+        sync: false
+      - key: MCP_URL
+        sync: false          # e.g. https://mura-mcp-backend.onrender.com
+      - key: MCP_API_KEY
+        sync: false
+      - key: MCP_PROJECT_ID
+        value: proj_mn15ol49_40b6464f9a90

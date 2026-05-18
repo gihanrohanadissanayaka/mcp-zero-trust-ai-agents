@@ -1,9 +1,17 @@
-import { Outlet, NavLink, useNavigate } from 'react-router-dom'
-import { CalendarCheck, LogOut, CalendarDays } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom'
+import { CalendarCheck, LogOut, CalendarDays, Users, Bot, ShieldCheck, ShieldOff } from 'lucide-react'
 
 export default function Layout() {
   const navigate = useNavigate()
-  const userName = localStorage.getItem('userName') || 'User'
+  const location = useLocation()
+  const userName  = localStorage.getItem('userName') || 'User'
+  const [hasAgent, setHasAgent] = useState(!!localStorage.getItem('agentToken'))
+
+  // Re-read token whenever the route changes (e.g. returning from /settings)
+  useEffect(() => {
+    setHasAgent(!!localStorage.getItem('agentToken'))
+  }, [location.pathname])
 
   function handleLogout() {
     localStorage.removeItem('userToken')
@@ -23,6 +31,14 @@ export default function Layout() {
             <span className="text-sm font-semibold text-gray-800">BookingApp</span>
           </div>
           <p className="text-xs text-gray-400 mt-0.5">Booking Management</p>
+          {/* Agent token status badge */}
+          <div className={`mt-2 flex items-center gap-1.5 text-[10px] font-medium px-2 py-1 rounded-full w-fit ${
+            hasAgent ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-600'
+          }`}>
+            {hasAgent
+              ? <><ShieldCheck size={10}/> Agent token active</>
+              : <><ShieldOff  size={10}/> No agent token</>}
+          </div>
         </div>
 
         <nav className="flex-1 px-3 py-4 space-y-0.5">
@@ -35,6 +51,26 @@ export default function Layout() {
           >
             <CalendarCheck size={16} />
             Bookings
+          </NavLink>
+          <NavLink to="/travellers"
+            className={({ isActive }) =>
+              `flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                isActive ? 'bg-indigo-50 text-indigo-700' : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
+              }`
+            }
+          >
+            <Users size={16} />
+            Travellers
+          </NavLink>
+          <NavLink to="/settings"
+            className={({ isActive }) =>
+              `flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                isActive ? 'bg-indigo-50 text-indigo-700' : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
+              }`
+            }
+          >
+            <Bot size={16} />
+            Agent Token
           </NavLink>
         </nav>
 

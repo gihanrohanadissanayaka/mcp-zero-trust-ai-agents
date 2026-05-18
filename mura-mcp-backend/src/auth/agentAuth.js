@@ -28,6 +28,7 @@ const DEFAULT_POLICY = {
   allowedTools:       [],          // empty = no tools allowed
   allowedProjects:    [],          // empty = no projects allowed
   allowedOperations:  ['read'],    // read-only by default
+  allowedServices:    [],          // empty = all services allowed (backward-compatible)
   maxSessionDurationMinutes: 30,   // 30-min sessions by default
   rateLimit: {
     requestsPerMinute: 60,

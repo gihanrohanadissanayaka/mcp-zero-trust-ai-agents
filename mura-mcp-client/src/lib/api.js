@@ -1,7 +1,7 @@
 import axios from 'axios'
 
 const api = axios.create({
-  baseURL: '/api',
+  baseURL: import.meta.env.VITE_API_URL || '/api',
   headers: { 'Content-Type': 'application/json' },
 })
 
@@ -28,6 +28,7 @@ export const deactivateAgent    = (id)     => api.delete(`/agents/${id}`)
 export const rotateAgentSecret  = (id)     => api.post(`/agents/${id}/rotate-secret`)
 export const listAgentSessions  = (id)     => api.get(`/agents/${id}/sessions`)
 export const revokeAgentSessions= (id)     => api.delete(`/agents/${id}/sessions`)
+export const getSessionsSummary = ()       => api.get('/agents/sessions-summary')
 
 // Agent authenticate / tokens
 export const authenticateAgent = (data) => api.post('/agents/authenticate', data)

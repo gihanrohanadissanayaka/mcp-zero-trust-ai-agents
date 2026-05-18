@@ -97,7 +97,8 @@ router.post('/:id/generate-email', async (req, res) => {
       method:  'POST',
       headers: {
         'Content-Type':  'application/json',
-        'Authorization': `Bearer ${mcpApiKey}`
+        'Authorization': `Bearer ${mcpApiKey}`,
+        ...(req.headers['x-agent-id'] ? { 'x-agent-id': req.headers['x-agent-id'] } : {})
       },
       body: JSON.stringify({
         tool:      'generate_email',

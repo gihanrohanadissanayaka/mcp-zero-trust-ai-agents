@@ -2588,10 +2588,21 @@ process.on('SIGINT', async () => {
 // =====================================================
 
 async function startApiServer() {
+  const { default: cors } = await import('cors');
   const app = express();
-  const apiPort = process.env.API_PORT || 3001;
+  const apiPort = process.env.API_PORT || process.env.PORT || 3001;
   
   // Middleware
+  const allowedOrigins = process.env.CORS_ORIGIN
+    ? process.env.CORS_ORIGIN.split(',')
+    : ['http://localhost:5173'];
+  app.use(cors({
+    origin: (origin, cb) => {
+      if (!origin || allowedOrigins.includes(origin)) return cb(null, true);
+      cb(new Error('CORS: origin not allowed'));
+    },
+    credentials: true,
+  }));
   app.use(express.json({ limit: '10mb' }));
   app.use(express.urlencoded({ extended: true }));
   
