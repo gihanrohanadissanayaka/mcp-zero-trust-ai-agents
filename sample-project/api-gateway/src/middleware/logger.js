@@ -8,7 +8,9 @@
 
 import { MongoClient } from 'mongodb'
 
-const MONGO_URI = process.env.MONGO_URI || 'mongodb://localhost:27017/mcphub'
+// MCP_MONGO_URI points to the MCP Hub database (localhost by default).
+// Kept separate from MONGO_URI which points to the sample-project's own DB.
+const MONGO_URI = process.env.MCP_MONGO_URI || 'mongodb://localhost:27017/mcphub'
 
 let _db = null
 

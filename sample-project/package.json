@@ -7,11 +7,13 @@
     "api-gateway",
     "auth-service",
     "booking-service",
+    "traveller-service",
+    "payment-service",
     "client"
   ],
   "scripts": {
-    "start": "concurrently --names \"auth,booking,gateway,client\" --prefix-colors \"green,yellow,cyan,magenta\" \"npm run start -w auth-service\" \"npm run start -w booking-service\" \"npm run start -w api-gateway\" \"npm run dev -w client\"",
-    "dev": "concurrently --names \"auth,booking,gateway,client\" --prefix-colors \"green,yellow,cyan,magenta\" \"npm run dev -w auth-service\" \"npm run dev -w booking-service\" \"npm run dev -w api-gateway\" \"npm run dev -w client\"",
+    "start": "concurrently --names \"auth,booking,traveller,payment,gateway,client\" --prefix-colors \"green,yellow,blue,magenta,cyan,white\" \"npm run start -w auth-service\" \"npm run start -w booking-service\" \"npm run start -w traveller-service\" \"npm run start -w payment-service\" \"npm run start -w api-gateway\" \"npm run dev -w client\"",
+    "dev": "concurrently --names \"auth,booking,traveller,payment,gateway,client\" --prefix-colors \"green,yellow,blue,magenta,cyan,white\" \"npm run dev -w auth-service\" \"npm run dev -w booking-service\" \"npm run dev -w traveller-service\" \"npm run dev -w payment-service\" \"npm run dev -w api-gateway\" \"npm run dev -w client\"",
     "install:all": "npm install --workspaces"
   },
   "devDependencies": {

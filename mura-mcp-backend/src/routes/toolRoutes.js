@@ -22,6 +22,7 @@
 import express from 'express'
 import Groq    from 'groq-sdk'
 import { getDatabase } from '../config/database/connection.js'
+import { evaluatePolicy } from '../auth/policyEngine.js'
 
 const router = express.Router()
 
@@ -95,6 +96,7 @@ async function writeLog({ tool, input, result, allowed, error, req, durationMs, 
       allowed,
 
       // ── Caller identity ──────────────────────────
+      agentId:      req.headers?.['x-agent-id'] || null,
       developerId:  req.caller?.developerId || null,
       callerEmail:  req.caller?.email        || null,
       callerName:   req.caller?.name         || null,
@@ -190,6 +192,34 @@ router.post('/invoke', requireApiKey, async (req, res) => {
   }
 
   console.log(`[mcp/tools] invoke tool="${tool}" caller="${req.caller.email}" project="${project?.name || projectId || 'none'}"`)
+
+  // ── Agent policy enforcement ──────────────────────────────
+  // If the request was initiated by an agent (x-agent-id forwarded from gateway),
+  // evaluate the agent's policy rules before proceeding.
+  const agentId = req.headers['x-agent-id'] || null
+  if (agentId) {
+    const policyResult = await evaluatePolicy(
+      agentId,
+      tool,
+      { projectId: projectId || null, operation: 'write' }
+    )
+    if (policyResult.decision !== 'allow') {
+      await writeLog({
+        tool, input, allowed: false,
+        error: `policy_denied:${policyResult.reason}`,
+        req, durationMs: Date.now() - start, project
+      })
+      return res.status(403).json({
+        success:     false,
+        error:       `Tool "${tool}" denied by agent policy.`,
+        reason:      policyResult.reason,
+        matchedRule: policyResult.matchedRule ?? null,
+        agentId,
+        hint:        'Update the agent\'s policy rules via the MCP Hub Policy Editor.'
+      })
+    }
+    console.log(`[mcp/tools] policy ALLOW | tool="${tool}" agent="${agentId}" rule="${policyResult.matchedRule?.id ?? policyResult.reason}"`)
+  }
 
   // ── Execute tool ──────────────────────────────────────────
   try {

@@ -116,7 +116,7 @@ router.get('/', requireApiKey, async (req, res) => {
   try {
     const db = getDatabase()
     const {
-      projectId, tool, status,
+      projectId, method, allowed,
       from, to,
       page  = '1',
       limit = '20'
@@ -128,9 +128,9 @@ router.get('/', requireApiKey, async (req, res) => {
 
     // Build filter — always scoped to this developer
     const filter = { developerId: req.caller.developerId }
-    if (projectId) filter.projectId = projectId
-    if (tool)      filter.tool      = tool
-    if (status)    filter.status    = status
+    if (projectId) filter.projectId      = projectId
+    if (method)    filter.method         = method.toUpperCase()
+    if (allowed !== undefined && allowed !== '') filter.allowed = allowed === 'true'
     if (from || to) {
       filter.timestamp = {}
       if (from) filter.timestamp.$gte = new Date(from)
@@ -147,22 +147,35 @@ router.get('/', requireApiKey, async (req, res) => {
         .project({
           _id:         0,
           logId:       1,
+          source:      1,
+          // gateway access log fields
+          agentId:     1,
+          sessionId:   1,
+          action:      1,
+          resource:    1,
+          method:      1,
+          path:        1,
+          statusCode:  1,
+          meta:        1,
+          // tool invocation log fields
           tool:        1,
           status:      1,
-          allowed:     1,
+          callerEmail: 1,
+          callerName:  1,
           projectId:   1,
           projectName: 1,
           environment: 1,
-          callerEmail: 1,
-          callerName:  1,
           durationMs:  1,
+          userAgent:   1,
           ip:          1,
           error:       1,
+          denyReason:  1,
           'request.tool':        1,
           'request.receivedAt':  1,
-          'request.projectId':   1,
           'response.model':      1,
           'response.tokenUsage': 1,
+          // common
+          allowed:     1,
           timestamp:   1
         })
         .toArray(),

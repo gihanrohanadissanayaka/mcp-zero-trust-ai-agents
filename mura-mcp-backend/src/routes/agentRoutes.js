@@ -98,7 +98,7 @@ async function requireDeveloperAuth(req, res, next) {
 
 router.post('/authenticate', async (req, res) => {
   try {
-    const { agentId, agentSecret, context } = req.body;
+    const { agentId, agentSecret, context, requestedDurationMinutes } = req.body;
 
     if (!agentId || !agentSecret) {
       return res.status(400).json({
@@ -110,7 +110,8 @@ router.post('/authenticate', async (req, res) => {
     const result = await issueSessionToken(
       agentId.trim(),
       agentSecret.trim(),
-      context?.trim() || 'mcp-client'
+      context?.trim() || 'mcp-client',
+      requestedDurationMinutes ? Number(requestedDurationMinutes) : null
     );
 
     res.status(200).json({
@@ -173,19 +174,29 @@ router.post('/validate-session', async (req, res) => {
 
     // Log the validation call
     const db = getDatabase();
+    const projectId = req.headers['x-project-id'] || null;
+    let projectName = null;
+    if (projectId) {
+      const project = await db.collection('projects').findOne(
+        { projectId },
+        { projection: { name: 1, _id: 0 } }
+      );
+      projectName = project?.name ?? null;
+    }
     await db.collection('agent_action_logs').insertOne({
-      logId:      `log_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`,
-      agentId:    result.agentId,
+      logId:       `log_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`,
+      agentId:     result.agentId,
       developerId: result.developerId,
-      sessionId:  result.sessionId,
-      action:     'VALIDATE_SESSION',
-      resource:   req.headers['x-target-service'] || 'unknown',
-      method:     req.headers['x-target-method']  || 'unknown',
-      path:       req.headers['x-target-path']    || 'unknown',
-      projectId:  req.headers['x-project-id']     || null,
-      allowed:    true,
-      ip:         req.ip,
-      timestamp:  new Date()
+      sessionId:   result.sessionId,
+      action:      'VALIDATE_SESSION',
+      resource:    req.headers['x-target-service'] || 'unknown',
+      method:      req.headers['x-target-method']  || 'unknown',
+      path:        req.headers['x-target-path']    || 'unknown',
+      projectId,
+      projectName,
+      allowed:     true,
+      ip:          req.ip,
+      timestamp:   new Date()
     });
 
     return res.status(200).json({
@@ -197,6 +208,7 @@ router.post('/validate-session', async (req, res) => {
       allowedTools:      result.allowedTools      || [],
       allowedProjects:   result.allowedProjects   || [],
       allowedOperations: result.allowedOperations || [],
+      allowedServices:   result.allowedServices   || [],
       expiresAt:         result.expiresAt
     });
 
@@ -437,6 +449,31 @@ router.get('/', requireDeveloperAuth, async (req, res) => {
 });
 
 // ============================================================
+// GET /api/agents/sessions-summary
+// Returns active session count per agent for the dashboard.
+// Must be defined BEFORE /:agentId to avoid route conflict.
+// ============================================================
+
+router.get('/sessions-summary', requireDeveloperAuth, async (req, res) => {
+  try {
+    const db  = getDatabase();
+    const now = new Date();
+
+    const rows = await db.collection('agent_sessions').aggregate([
+      { $match: { revoked: { $ne: true }, expiresAt: { $gt: now } } },
+      { $group: { _id: '$agentId', activeCount: { $sum: 1 } } }
+    ]).toArray();
+
+    const summary = Object.fromEntries(rows.map(r => [r._id, r.activeCount]));
+
+    return res.json({ success: true, data: { summary } });
+  } catch (error) {
+    console.error('Sessions summary error:', error.message);
+    return res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// ============================================================
 // GET /api/agents/:agentId
 // Get a specific agent's details (developer must own it)
 // ============================================================
@@ -492,13 +529,22 @@ router.patch('/:agentId', requireDeveloperAuth, async (req, res) => {
       return res.status(403).json({ success: false, error: 'Access denied' });
     }
 
-    const { name, description, allowedTools, allowedProjects } = req.body;
+    const { name, description, allowedTools, allowedProjects, allowedOperations, allowedServices } = req.body;
     const updates = { updatedAt: new Date() };
 
     if (name        !== undefined) updates.name        = name.trim();
     if (description !== undefined) updates.description = description.trim();
     if (Array.isArray(allowedTools))    updates['policy.allowedTools']    = allowedTools;
     if (Array.isArray(allowedProjects)) updates['policy.allowedProjects'] = allowedProjects;
+    if (Array.isArray(allowedOperations) && allowedOperations.length > 0) {
+      const validOps = ['read', 'write', 'admin'];
+      const filtered = allowedOperations.filter(op => validOps.includes(op));
+      if (filtered.length > 0) updates['policy.allowedOperations'] = filtered;
+    }
+    // allowedServices: [] means all services allowed; any non-empty list restricts to those services
+    if (Array.isArray(allowedServices)) {
+      updates['policy.allowedServices'] = allowedServices;
+    }
 
     await db.collection('agents').updateOne(
       { agentId: req.params.agentId },
@@ -883,6 +929,64 @@ router.post('/:agentId/policy/simulate', requireDeveloperAuth, async (req, res) 
   } catch (error) {
     const status = error.message.includes('not found') ? 404 : 500;
     res.status(status).json({ success: false, error: error.message });
+  }
+});
+
+// ============================================================
+// POST /api/agents/log-access
+// Internal endpoint — called by external API gateways to record
+// a denied access attempt that was blocked after token validation.
+// No developer auth required; agentId is used for basic validation.
+// ============================================================
+
+router.post('/log-access', async (req, res) => {
+  try {
+    const {
+      agentId, sessionId, developerId,
+      action, resource, method, path,
+      projectId, allowed, denyReason,
+      statusCode, ip
+    } = req.body;
+
+    if (!agentId) {
+      return res.status(400).json({ success: false, error: 'agentId is required' });
+    }
+
+    const db = getDatabase();
+
+    // Resolve projectName if a projectId was provided
+    let projectName = null;
+    if (projectId) {
+      const project = await db.collection('projects').findOne(
+        { projectId },
+        { projection: { name: 1, _id: 0 } }
+      );
+      projectName = project?.name ?? null;
+    }
+
+    await db.collection('agent_action_logs').insertOne({
+      logId:       `log_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`,
+      source:      'gateway_access',
+      agentId:     agentId ?? 'unknown',
+      developerId: developerId ?? 'unknown',
+      sessionId:   sessionId  ?? 'unknown',
+      action:      action     ?? 'GATEWAY_ACCESS',
+      resource:    resource   ?? 'unknown',
+      method:      method     ?? 'unknown',
+      path:        path       ?? 'unknown',
+      projectId:   projectId  ?? null,
+      projectName: projectName,
+      allowed:     allowed    ?? false,
+      denyReason:  denyReason ?? null,
+      statusCode:  statusCode ?? (allowed ? 200 : 403),
+      ip:          ip         ?? null,
+      timestamp:   new Date()
+    });
+
+    return res.status(201).json({ success: true });
+  } catch (error) {
+    console.error('[log-access] error:', error.message);
+    return res.status(500).json({ success: false, error: error.message });
   }
 });
 
